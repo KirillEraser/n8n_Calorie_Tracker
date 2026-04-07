@@ -29,15 +29,26 @@
   <div id="output"></div>
 
   <script>
-    const workflow = JSON.stringify(/* your workflow JSON here */);
-    const container = document.getElementById('output');
+  const container = document.getElementById('output');
 
-    const demo = document.createElement('n8n-demo');
-    demo.setAttribute('frame', 'true');
-    demo.setAttribute('clicktointeract', 'true');
-    demo.setAttribute('workflow', workflow);
+  fetch('./workflow.json')
+    .then(res => {
+      if (!res.ok) throw new Error('Failed to load workflow.json');
+      return res.json();
+    })
+    .then(data => {
+      const demo = document.createElement('n8n-demo');
 
-    container.appendChild(demo);
-  </script>
+      demo.setAttribute('frame', 'true');
+      demo.setAttribute('clicktointeract', 'true');
+      demo.setAttribute('workflow', JSON.stringify(data));
+
+      container.appendChild(demo);
+    })
+    .catch(err => {
+      console.error(err);
+      container.innerHTML = '<p style="color:white">Failed to load workflow.json</p>';
+    });
+</script>
 </body>
 </html>
