@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
   <title>n8n Workflow</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/@webcomponents/webcomponentsjs@2/webcomponents-loader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@webcomponents/webcomponentsjs/webcomponents-loader.js"></script>
   <script src="https://unpkg.com/lit/polyfill-support.js"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@n8n_io/n8n-demo-component/n8n-demo.bundled.js"></script>
 
@@ -17,23 +17,31 @@
       background: #1f2937;
     }
 
-    n8n-demo {
+    #output {
       width: 100vw;
       height: 100vh;
+    }
+
+    n8n-demo {
+      width: 100%;
+      height: 100%;
       display: block;
     }
   </style>
 </head>
-
 <body>
-  <n8n-demo id="demo"></n8n-demo>
+  <div id="output"></div>
 
   <script>
-    fetch('./workflow.json')
-      .then(res => res.json())
-      .then(data => {
-        document.getElementById('demo').workflow = JSON.stringify(data);
-      });
+    const workflow = JSON.stringify(/* your workflow JSON here */);
+    const container = document.getElementById('output');
+
+    const demo = document.createElement('n8n-demo');
+    demo.setAttribute('frame', 'true');
+    demo.setAttribute('clicktointeract', 'true');
+    demo.setAttribute('workflow', workflow);
+
+    container.appendChild(demo);
   </script>
 </body>
 </html>
