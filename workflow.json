@@ -1,0 +1,2753 @@
+{
+  "name": "Calorie counter",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {
+          "download": true,
+          "userIds": "USER1_ID, USER2_ID, USER3_ID, USER4_ID"
+        }
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -144,
+        -880
+      ],
+      "id": "bf36054a-4718-4914-a854-0dcba7edebd5",
+      "name": "Audio Message",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_1",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/getFile?file_id={{ $('Audio Message').item.json.message.voice.file_id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        544,
+        -448
+      ],
+      "id": "cecf6549-c2d0-49f4-869a-8f557bed19c0",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.telegram.org/file/bot{{TELEGRAM_BOT_TOKEN}}/{{ $('HTTP Request').item.json.result.file_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        544,
+        -224
+      ],
+      "id": "47b0a547-d82b-4fd7-8210-6bcfbed65b2d",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        368,
+        16
+      ],
+      "id": "6360a6ae-cd52-412a-9d29-5c8d6c5e8403",
+      "name": "Transcribe a recording",
+      "credentials": {
+        "openAiApi": {
+          "id": "PLACEHOLDER_OPENAI_CREDENTIAL_ID",
+          "name": "Placeholder OpenAI Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "42f72b49-a880-4bd2-a264-a80a4adcd6dd",
+              "name": "text",
+              "value": "=Message: \"{{ $('Transcribe a recording').item.json.text }}\" Date: {{ new Date($('Audio Message').item.json.message.date * 1000).toLocaleString() }}",
+              "type": "string"
+            },
+            {
+              "id": "291a239c-5f30-4596-ba54-bb83c8b01d8c",
+              "name": "update_message",
+              "value": "={{ $json.result.message_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        832,
+        16
+      ],
+      "id": "af6bbc76-ad26-499a-92e6-87210b1b13f7",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a nutrition-tracking assistant integrated with a Telegram workflow via n8n. Your task is to parse a user message describing a meal with multiple food items and calculate their nutritional values. The message may be in English, Russian, or mixed languages and include:\n- Food names (e.g., \"спагетти\", \"spaghetti\", \"овощи\", \"milk\").\n- Portion sizes (e.g., \"200 grams\", \"125 milliliters\").\n- Nutritional info per 100g/100ml (e.g., fat, protein, carbs, kcal), if provided (if not, guess or use the Nutritional Value Database tool to fetch nutritional values per 100g).\n\n**Instructions**:\n1. **Parse Ingredients**:\n   - Extract each food item, its amount (number), and unit (g or ml).\n   - If no amount is specified, assume 100g for solids or 100ml for liquids.\n   - If no unit is specified, infer from context (e.g., \"spaghetti\" = g, \"milk\" = ml).\n   - Normalize names (e.g., \"спагетти\" or \"spaghetti\" → \"spaghetti\").\n\n2. **Nutritional Values**:\n   - If provided (e.g., \"1.5g fat per 100g\"), scale to the portion size (e.g., 200g → 3g fat).\n   - If missing, guess standard values (per 100g/100ml) or use the Nutritional Value Database tool.\n   - Round all values to 1 decimal place.\n\n3. **Totals**:\n   - Sum fat, protein, carbs, and kcal across all ingredients.\n   - Round totals to 1 decimal place.\n\n4. **Date/Time**:\n   - Use the provided timestamp: {{ $json[\"date\"] }} (e.g., \"10/11/2025, 6:09:02 PM\").\n   - Convert to ISO 8601 UTC format (e.g., \"2025-10-11T18:09:02Z\").\n   - If format varies (e.g., Unix seconds), parse correctly.\n\n5. **Output**:\n   - Return a single JSON object:\n     ```json\n     {\n       \"ingredients\": [\n         {\n           \"name\": \"string\",\n           \"amount\": number,\n           \"unit\": \"g\" | \"ml\",\n           \"fat_g\": number,\n           \"protein_g\": number,\n           \"carbs_g\": number,\n           \"kcal\": number\n         }\n       ],\n       \"total\": {\n         \"fat_g\": number,\n         \"protein_g\": number,\n         \"carbs_g\": number,\n         \"kcal\": number\n       },\n       \"log_time\": \"string\" // ISO 8601, e.g., \"2025-10-11T18:09:02Z\"\n     }\n     ```\n   - No extra text or explanations.\n   - Ensure valid JSON.\n   - If data is missing (e.g., no nutrition info), use standard values.\n   - Handle edge cases (e.g., \"кабажу\" → \"vegetables\", assume zucchini-like stats).\n\n**Rules**:\n- Multilingual: Handle Russian (e.g., \"молоко\", \"овощи\") and English.\n- Case-insensitive parsing.\n- If no nutrition data, fallback to standard values above.\n- For ambiguous terms (e.g., \"vegetables\"), assume mixed non-starchy unless specified.\n- Reject invalid inputs (e.g., negative amounts) by skipping them.\n- Use exact provided nutrition if given, even if it differs from standards."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1072,
+        16
+      ],
+      "id": "6fef99e3-edab-4d40-aff1-8e2fb1813b97",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5.1",
+          "mode": "list",
+          "cachedResultName": "gpt-5.1"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1072,
+        192
+      ],
+      "id": "f973deb5-cc8a-44f6-b4d8-dc52ba474a10",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "PLACEHOLDER_OPENAI_CREDENTIAL_ID",
+          "name": "Placeholder OpenAI Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"ingredients\": [\n    {\n      \"name\": \"spaghetti\",\n      \"amount\": 200,\n      \"unit\": \"g\",\n      \"fat_g\": 3,\n      \"protein_g\": 22,\n      \"carbs_g\": 142,\n      \"kcal\": 680\n    },\n    {\n      \"name\": \"vegetables\",\n      \"amount\": 200,\n      \"unit\": \"g\",\n      \"fat_g\": 0.6,\n      \"protein_g\": 3.6,\n      \"carbs_g\": 14,\n      \"kcal\": 80\n    },\n    {\n      \"name\": \"milk\",\n      \"amount\": 125,\n      \"unit\": \"ml\",\n      \"fat_g\": 4,\n      \"protein_g\": 3.8,\n      \"carbs_g\": 5.9,\n      \"kcal\": 75\n    }\n  ],\n  \"total\": {\n    \"fat_g\": 7.6,\n    \"protein_g\": 29.4,\n    \"carbs_g\": 161.9,\n    \"kcal\": 835\n  },\n  \"log_time\": \"2025-10-11T20:15:00Z\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1264,
+        192
+      ],
+      "id": "6ba80c97-1af5-447f-9b85-84f2b65c9ad4",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PLACEHOLDER_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Calorie Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PLACEHOLDER_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Meal Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PLACEHOLDER_GOOGLE_SHEET_ID/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $json.formattedDate }}",
+            "Ingredients": "={{ $('Latest AI Output').item.json.output.output.ingredients }}",
+            "Total Fat": "={{ $('Latest AI Output').item.json.output.output.total.fat_g }}",
+            "Total Protein": "={{ $('Latest AI Output').item.json.output.output.total.protein_g }}",
+            "Total Carbs": "={{ $('Latest AI Output').item.json.output.output.total.carbs_g }}",
+            "Total Kcal": "={{ $('Latest AI Output').item.json.output.output.total.kcal }}",
+            "Raw JSON": "={{ $('Latest AI Output').item.json.output.output }}",
+            "User ID": "={{ $('Audio Message').item.json.message.chat.id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "User ID",
+              "displayName": "User ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ingredients",
+              "displayName": "Ingredients",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total Fat",
+              "displayName": "Total Fat",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total Protein",
+              "displayName": "Total Protein",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total Carbs",
+              "displayName": "Total Carbs",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Total Kcal",
+              "displayName": "Total Kcal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Raw JSON",
+              "displayName": "Raw JSON",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "useAppend": true
+        }
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2448,
+        -64
+      ],
+      "id": "f33ed213-e6a2-4907-8ba3-55e5d671f954",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PLACEHOLDER_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Placeholder Google Sheets Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "message": "=*Meal added to your log! 🍽️*\n\n{{ $json.output.output.ingredients.length > 0 ? $json.output.output.ingredients.map(item => `- ${item.name}: ${item.amount}${item.unit} (Fat: ${item.fat_g.toFixed(1)}g, Protein: ${item.protein_g.toFixed(1)}g, Carbs: ${item.carbs_g.toFixed(1)}g, ${item.kcal} kcal)`).join('\\n') : '(No ingredients logged)' }}\n\n*Total*: {{ $json.output.output.total.kcal }} kcal (Fat: {{ $json.output.output.total.fat_g }}g, Protein: {{ $json.output.output.total.protein_g }}g, Carbs: {{ $json.output.output.total.carbs_g }}g)\n*Logged at*: {{ $json.output.output.log_time }}",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "disapproveLabel": "❌ Decline & Edit"
+          }
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1904,
+        32
+      ],
+      "id": "cce4347d-c073-48cd-bc66-511c630f49be",
+      "name": "Send message and wait for response",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_2",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c8d7405d-4004-4a8f-8989-fd011f12c9ea",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2080,
+        32
+      ],
+      "id": "016a590d-9d88-42d3-9a3c-36bf74da5476",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "42f72b49-a880-4bd2-a264-a80a4adcd6dd",
+              "name": "text",
+              "value": "=Previous output: \"{{ JSON.stringify($('Latest AI Output').item.json.output) }}\"\nComment:\"{{ $json.data.text }}\"\nMessage: \"{{ $('Transcribe a recording').item.json.text }}\" Date: {{ new Date($('Audio Message').item.json.message.date * 1000).toLocaleString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2448,
+        160
+      ],
+      "id": "4117a5e7-7ffa-4544-9652-53d74a1cbed6",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a nutrition-tracking assistant integrated with a Telegram workflow via n8n. Your task is to edit previously logged meal data based on a user’s comment and recalculate nutritional values. The input includes:\n- \"Previous output\": The previously logged JSON data (e.g., \"[object Object]\" or a valid JSON string).\n- \"Comment\": A user’s correction or addition (e.g., \"Actually, I ate 210g\").\n- \"Message\": The original meal description (e.g., in English, Russian, or mixed languages) with food names, portion sizes, and optional nutritional info per 100g/100ml.\n- \"Date\": The timestamp (e.g., \"10/12/2025, 11:06:02 AM\").\n\n**Instructions**:\n1. **Parse Previous Output**:\n   - If \"Previous output\" is \"[object Object]\" or invalid JSON, attempt to reconstruct it from \"Message\" as a fallback.\n   - Extract the existing ingredients, their amounts, units, and nutritional values (fat_g, protein_g, carbs_g, kcal).\n\n2. **Process Comment**:\n   - Extract any new amount and unit from \"Comment\" (e.g., \"210g\" → amount: 210, unit: \"g\").\n   - Match the corrected amount to the corresponding ingredient from \"Previous output\" or \"Message\" based on name (case-insensitive).\n   - If no match, treat it as a new ingredient with standard values unless nutrition is provided.\n\n3. **Nutritional Values**:\n   - For the corrected ingredient, scale its nutritional values (fat_g, protein_g, carbs_g, kcal) proportionally to the new amount based on per-100g/100ml values from \"Message\" or \"Previous output\".\n   - If per-100g/100ml values are provided in \"Message\" (e.g., \"3,2 грамма жира на 100 граммов\"), use them; otherwise, use the Nutritional Value Database tool to get the local nutritional database to fetch nutritional values per 100g. If there is no relevant information, guess the standard  nutritional value.\n   - Round all values to 1 decimal place.\n\n4. **Totals**:\n   - Sum fat_g, protein_g, carbs_g, and kcal across all ingredients (original and corrected).\n   - Round totals to 1 decimal place.\n\n5. **Date/Time**:\n   - Use the provided \"Date\" and convert to ISO 8601 UTC format (e.g., \"10/12/2025, 11:06:02 AM\" → \"2025-10-12T11:06:02Z\").\n\n6. **Output**:\n   - Return a single JSON object:\n     ```json\n     {\n       \"ingredients\": [\n         {\n           \"name\": \"string\",\n           \"amount\": number,\n           \"unit\": \"g\" | \"ml\",\n           \"fat_g\": number,\n           \"protein_g\": number,\n           \"carbs_g\": number,\n           \"kcal\": number\n         }\n       ],\n       \"total\": {\n         \"fat_g\": number,\n         \"protein_g\": number,\n         \"carbs_g\": number,\n         \"kcal\": number\n       },\n       \"log_time\": \"string\" // ISO 8601, e.g., \"2025-10-12T11:06:02Z\"\n     }"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        2624,
+        160
+      ],
+      "id": "b89e00b6-95ce-4135-aaa5-2a063b06d142",
+      "name": "AI Agent1"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5.1",
+          "mode": "list",
+          "cachedResultName": "gpt-5.1"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        2528,
+        320
+      ],
+      "id": "f29c1609-21f2-49df-aa7e-7885d461c01a",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "PLACEHOLDER_OPENAI_CREDENTIAL_ID",
+          "name": "Placeholder OpenAI Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"ingredients\": [\n    {\n      \"name\": \"spaghetti\",\n      \"amount\": 200,\n      \"unit\": \"g\",\n      \"fat_g\": 3,\n      \"protein_g\": 22,\n      \"carbs_g\": 142,\n      \"kcal\": 680\n    },\n    {\n      \"name\": \"vegetables\",\n      \"amount\": 200,\n      \"unit\": \"g\",\n      \"fat_g\": 0.6,\n      \"protein_g\": 3.6,\n      \"carbs_g\": 14,\n      \"kcal\": 80\n    },\n    {\n      \"name\": \"milk\",\n      \"amount\": 125,\n      \"unit\": \"ml\",\n      \"fat_g\": 4,\n      \"protein_g\": 3.8,\n      \"carbs_g\": 5.9,\n      \"kcal\": 75\n    }\n  ],\n  \"total\": {\n    \"fat_g\": 7.6,\n    \"protein_g\": 29.4,\n    \"carbs_g\": 161.9,\n    \"kcal\": 835\n  },\n  \"log_time\": \"2025-10-11T20:15:00Z\"\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2816,
+        320
+      ],
+      "id": "ef53554d-f5cb-41f3-8beb-a457a62b2a6a",
+      "name": "Structured Output Parser1"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "PLACEHOLDER_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Calorie Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PLACEHOLDER_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Meal Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PLACEHOLDER_GOOGLE_SHEET_ID/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Timestamp",
+              "lookupValue": "={{ $('Date & Time').item.json.formattedDate }}"
+            },
+            {
+              "lookupColumn": "User ID",
+              "lookupValue": "={{ $('Audio Message').item.json.message.from.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3040,
+        -64
+      ],
+      "id": "526c2e7e-81b1-474a-8d65-112a523651d4",
+      "name": "Get row(s) in sheet",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PLACEHOLDER_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Placeholder Google Sheets Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "formatDate",
+        "date": "={{ $now.minus({ hours: 3 }).toISODate() }}",
+        "format": "custom",
+        "customFormat": "dd/MM/yyyy",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 2,
+      "position": [
+        2272,
+        -64
+      ],
+      "id": "7105af8d-f8a9-4f0b-bb55-6bf0f10dc3b8",
+      "name": "Date & Time"
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "aggregation": "sum",
+              "field": "Total Fat"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Protein"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Carbs"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Kcal"
+            }
+          ]
+        },
+        "fieldsToSplitBy": "formattedDate",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1.1,
+      "position": [
+        3232,
+        208
+      ],
+      "id": "fee26f20-6f10-4e47-a42a-a994f5cd30a2",
+      "name": "Summarize"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=🔄 Processing...\n\n⤵️ Message recieved",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_notification": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        368,
+        -448
+      ],
+      "id": "ca1a87cc-549a-44f7-a1e7-19515c4066ed",
+      "name": "Send Progress Update",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_3",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "editMessageText",
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "messageId": "={{ $('Send Progress Update').item.json.result.message_id }}",
+        "text": "=🔄 Processing...\n\n📝 Message transcribing",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        368,
+        -224
+      ],
+      "id": "ef856a7c-0a87-46ed-a85b-ca8a079f2c8e",
+      "name": "Progress Update 2",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_4",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "editMessageText",
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "messageId": "={{ $('Send Progress Update').item.json.result.message_id }}",
+        "text": "=🔄 Processing...\n\n🤖 AI Agent Working",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        544,
+        16
+      ],
+      "id": "65956f56-41cc-4d57-bbe5-fa3187fb8a9f",
+      "name": "Progress Update ",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_5",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "deleteMessage",
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "messageId": "={{ $('Send Progress Update1').item.json.result.message_id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1520,
+        -64
+      ],
+      "id": "126b1a93-0e24-4e77-9135-be361569a05a",
+      "name": "Delete a chat message",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_6",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9105d217-329d-4dcb-b1a6-2c6e5bf7a210",
+              "name": "output",
+              "value": "={{ $(\"AI Agent1\").isExecuted ? $node[\"AI Agent1\"].json : $node[\"AI Agent\"].json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1712,
+        32
+      ],
+      "id": "269ea3df-e48b-42fb-b538-4b55ac60b82b",
+      "name": "Latest AI Output"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target (for getting leaner):\n--------------------------------------\nCalories: 2,100–2,200 kcal\nProtein: 150 g\nFat: 65–70 g\nCarbs: 190–220 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        -1248
+      ],
+      "id": "77a8fde7-2879-4b5b-bba8-469a1bd04b8b",
+      "name": "Send a text message1",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_7",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "PLACEHOLDER_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Calorie Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PLACEHOLDER_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Meal Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PLACEHOLDER_GOOGLE_SHEET_ID/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Timestamp",
+              "lookupValue": "={{ $('Date & Time1').item.json.formattedDate }}"
+            },
+            {
+              "lookupColumn": "User ID",
+              "lookupValue": "={{ $('Audio Message').item.json.message.from.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1040,
+        -1168
+      ],
+      "id": "642c366f-f4e4-4aa4-94d4-0069381909d6",
+      "name": "Get row(s) in sheet1",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PLACEHOLDER_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Placeholder Google Sheets Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "formatDate",
+        "date": "={{ $today }}",
+        "format": "=custom",
+        "customFormat": "dd/MM/yyyy",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 2,
+      "position": [
+        848,
+        -1168
+      ],
+      "id": "f1fe615a-5f75-44ba-86b9-453e22a88604",
+      "name": "Date & Time1"
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "aggregation": "sum",
+              "field": "Total Fat"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Protein"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Carbs"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Kcal"
+            }
+          ]
+        },
+        "fieldsToSplitBy": "formattedDate",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        -1168
+      ],
+      "id": "aedeeb37-7ba1-493a-bf75-91de730daca1",
+      "name": "Summarize1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "022521f2-0048-457e-bdec-3dd4b41f00b2",
+              "leftValue": "={{ $json.message.voice }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        48,
+        -880
+      ],
+      "id": "0ac0c82f-da04-476a-8070-4e39c71b794c",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.from.id }}",
+        "text": "=*Error!*\n\nSend an audio message or a command. The list of available commands:\n\n/meal - Make a meal log entry (you can also send an audio message without using command to make a log entry)\n\n/daily - See your total for the day\n\n/yesterday - See your total for the day before",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        832,
+        -192
+      ],
+      "id": "70e51495-785f-4037-aa58-69bafb85ba23",
+      "name": "Send a text message2",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_8",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## /daily Command logic",
+        "height": 640,
+        "width": 1040,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        784,
+        -1408
+      ],
+      "typeVersion": 1,
+      "id": "ae24b0c7-807d-4347-9290-a2675ae9f0d1",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "8dafbd87-7192-46c5-8a52-4638de0b1cf0"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "/start"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "a2ef5be2-44c0-48e1-bbbd-043a4cefcf98",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/yesterday",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "/yesterday"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "0304ee17-18f2-4b4e-86ed-1c8780ae84ca",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/daily",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "/daily"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e57f3d54-2a23-4b01-b242-0a2f1dcac882",
+                    "leftValue": "={{ $json.message.text }}",
+                    "rightValue": "/meal",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "/meal"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        560,
+        -944
+      ],
+      "id": "83214fea-0b8b-492b-a34b-2f3b16ab3abd",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target (for getting leaner):\n--------------------------------------\nCalories: 1,500–1,550 kcal\nProtein: 75–80 g\nFat: 38–40 g\nCarbs: 160–180 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        -1392
+      ],
+      "id": "07fdec74-a877-42c8-a62b-292db1b3f383",
+      "name": "Send a text message4",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_9",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 111111111,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    },
+                    "id": "0e25ddca-efcf-46cc-b31e-971f27408229"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User2"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "464b0c38-2f41-490c-b5c3-dd5731e0c85f",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 222222222,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "84a8f64f-5c87-45f0-954d-349eb09baaef",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 1171144007,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User3"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1bac6c75-e36a-46b2-b8c3-3605e2097481",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": "=1025157283",
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User4"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1376,
+        -1200
+      ],
+      "id": "01271699-e75f-43fa-8da3-484aa0887ccc",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target for getting leaner):\n--------------------------------------\nCalories: 2,100–2,200 kcal\nProtein: 150 g\nFat: 65–70 g\nCarbs: 190–220 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3664,
+        128
+      ],
+      "id": "e0a03bb7-a171-4547-ae05-c923b9b85b01",
+      "name": "Send a text message5",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_10",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target:\n--------------------------------------\nCalories: 1,500–1,550 kcal\nProtein: 75–80 g\nFat: 38–40 g\nCarbs: 160–180 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3664,
+        -32
+      ],
+      "id": "fde138cc-f7c2-423d-aafa-1a044fc6852b",
+      "name": "Send a text message6",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_11",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 111111111,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    },
+                    "id": "0e25ddca-efcf-46cc-b31e-971f27408229"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User2"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "464b0c38-2f41-490c-b5c3-dd5731e0c85f",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 222222222,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "ec5e3406-5cbd-4c99-980e-5fa060bd95b5",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 1171144007,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User3"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8bf949e6-292b-44f0-a431-1d111edc3ce3",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 1025157283,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User4"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        3376,
+        176
+      ],
+      "id": "26ea8013-5060-4b07-91af-e0166f377f4c",
+      "name": "Switch2"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target for getting leaner):\n--------------------------------------\nCalories: 2,400 kcal\nProtein: 160 g\nFat: ? g\nCarbs: ? g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        -1104
+      ],
+      "id": "6cf49ef3-ad59-4da0-8cbb-e5ee63922cd9",
+      "name": "Send a text message",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_12",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target for getting leaner):\n--------------------------------------\nCalories: 2,400 kcal\nProtein: 160 g\nFat: ? g\nCarbs: ? g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3664,
+        288
+      ],
+      "id": "7ced5b63-8895-402f-9e89-25c2d04f132c",
+      "name": "Send a text message7",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_13",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## /start Command logic\n",
+        "height": 240,
+        "width": 448,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        784,
+        -2384
+      ],
+      "typeVersion": 1,
+      "id": "e4578970-9a34-48df-8870-ff8243a2ba92",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "message": "=*Hello!*\n\nLet's set up your calorie tracker!\n\n",
+        "responseType": "customForm",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Enter your calorie goal for a day in Kcal:",
+              "fieldType": "number",
+              "placeholder": "1550",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Enter your protein goal for a day in grams:",
+              "fieldType": "number",
+              "placeholder": "160",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Enter your fat goal for a day in grams:",
+              "fieldType": "number",
+              "placeholder": "70",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Enter your carbohydrate goal for a day in grams:",
+              "fieldType": "number",
+              "placeholder": "360",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "What Interface Language is more convenient for you?",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "ru"
+                  },
+                  {
+                    "option": "en"
+                  }
+                ]
+              },
+              "requiredField": true
+            }
+          ]
+        },
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        832,
+        -2320
+      ],
+      "id": "1a168bf6-9fcd-47ba-bc5e-bcd555a989ef",
+      "name": "Send message and wait for response2",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_14",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "message": "Enter your meal or drink and it's nutritional value.",
+        "responseType": "freeText",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        848,
+        -480
+      ],
+      "id": "6363bdde-6e1a-4b7c-8e4b-1399fed4a310",
+      "name": "Send message and wait for response3",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_15",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## /meal Command logic",
+        "height": 304,
+        "width": 1008,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        784,
+        -576
+      ],
+      "typeVersion": 1,
+      "id": "559800aa-00b2-4105-b42a-a48f89706bd5",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Download & Transcribe Audio",
+        "height": 688,
+        "width": 416,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        304,
+        -512
+      ],
+      "typeVersion": 1,
+      "id": "937de1fa-3ca4-4545-bc51-849863df9fdf",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "## Output an error",
+        "height": 224,
+        "width": 224,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        784,
+        -256
+      ],
+      "typeVersion": 1,
+      "id": "938d5cb9-f5ab-4ad4-9e97-ad7ed218a172",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "content": "## Get New Meal and enter it into the Database",
+        "height": 576,
+        "width": 1904,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1040,
+        -112
+      ],
+      "typeVersion": 1,
+      "id": "e5d48347-1738-48a5-8d62-a30db5954fcf",
+      "name": "Sticky Note5"
+    },
+    {
+      "parameters": {
+        "content": "## Send an Update to the user (/daily repeat)",
+        "height": 720,
+        "width": 848,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3008,
+        -112
+      ],
+      "typeVersion": 1,
+      "id": "522ca3ff-4813-4d78-8362-b05495ee4de7",
+      "name": "Sticky Note6"
+    },
+    {
+      "parameters": {
+        "content": "## Get a comment from the user and try again\n",
+        "height": 352,
+        "width": 688
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        2240,
+        96
+      ],
+      "typeVersion": 1,
+      "id": "3d1c53f5-ab73-48b7-8cde-dc420e5fd48c",
+      "name": "Sticky Note7"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "message": "=What to correct?",
+        "responseType": "freeText",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2272,
+        160
+      ],
+      "id": "264111fa-272d-4217-80ac-944f56cbcec0",
+      "name": "Send message and wait for response1",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_16",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Get an incoming message and determine if it's an audio or not",
+        "height": 256,
+        "width": 416,
+        "color": 7
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -192,
+        -976
+      ],
+      "typeVersion": 1,
+      "id": "66f55b6f-3328-4e22-8465-1c9a3fbd7c0d",
+      "name": "Sticky Note8"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=🔄 Processing...\n\n🤖 AI Agent Working",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_notification": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        -480
+      ],
+      "id": "fabf37a0-2221-4a16-a9fa-5288dc82a313",
+      "name": "Send Progress Update1",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_17",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "42f72b49-a880-4bd2-a264-a80a4adcd6dd",
+              "name": "text",
+              "value": "=Message: \"{{ $('Send message and wait for response3').item.json.data.text }}\" Date: {{ new Date($('Audio Message').item.json.message.date * 1000).toLocaleString() }}",
+              "type": "string"
+            },
+            {
+              "id": "28b63c5a-2fdd-4574-8629-479cd27ce8e1",
+              "name": "update_message",
+              "value": "={{ $json.result.message_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1248,
+        -480
+      ],
+      "id": "d2c77b98-2522-4ba6-aeca-d4460d3ea15f",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f1194cd6-ca45-4830-be33-c6ba8310ccce",
+              "leftValue": "={{ $('Audio Message').item.json.message.voice }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "notExists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1360,
+        16
+      ],
+      "id": "51b8796c-e58c-4906-8cc9-494171bbee5b",
+      "name": "If /meal or not"
+    },
+    {
+      "parameters": {
+        "operation": "deleteMessage",
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "messageId": "={{ $('Progress Update ').item.json.result.message_id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1520,
+        96
+      ],
+      "id": "706eb928-4777-4052-a5ae-ddaeb8f769bd",
+      "name": "Delete a chat message1",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_18",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target (for getting leaner):\n--------------------------------------\nCalories: 2,100–2,200 kcal\nProtein: 150 g\nFat: 65–70 g\nCarbs: 190–220 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        -1936
+      ],
+      "id": "100a0729-40a4-4384-832a-6e1ba26334a7",
+      "name": "Send a text message3",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_19",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "PLACEHOLDER_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Calorie Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PLACEHOLDER_GOOGLE_SHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Meal Log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/PLACEHOLDER_GOOGLE_SHEET_ID/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Timestamp",
+              "lookupValue": "={{ $('Date & Time2').item.json.formattedDate }}"
+            },
+            {
+              "lookupColumn": "User ID",
+              "lookupValue": "={{ $('Audio Message').item.json.message.from.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1040,
+        -1840
+      ],
+      "id": "341c010e-6b44-4175-9146-329878a11cc4",
+      "name": "Get row(s) in sheet2",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PLACEHOLDER_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Placeholder Google Sheets Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "formatDate",
+        "date": "={{ $today.minus(1, 'days') }}",
+        "format": "=custom",
+        "customFormat": "dd/MM/yyyy",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dateTime",
+      "typeVersion": 2,
+      "position": [
+        848,
+        -1840
+      ],
+      "id": "e494b01c-066d-4a98-b159-eb0bd8211878",
+      "name": "Date & Time2"
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "aggregation": "sum",
+              "field": "Total Fat"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Protein"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Carbs"
+            },
+            {
+              "aggregation": "sum",
+              "field": "Total Kcal"
+            }
+          ]
+        },
+        "fieldsToSplitBy": "formattedDate",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        -1840
+      ],
+      "id": "5dd85296-c569-47b8-b8d1-4543608fd505",
+      "name": "Summarize2"
+    },
+    {
+      "parameters": {
+        "content": "## /yesterday Command logic",
+        "height": 704,
+        "width": 1040,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        784,
+        -2128
+      ],
+      "typeVersion": 1,
+      "id": "68cd6710-d95b-4245-805a-eef350095b55",
+      "name": "Sticky Note9"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target for getting leaner):\n--------------------------------------\nCalories: 1,500–1,550 kcal\nProtein: 75–80 g\nFat: 38–40 g\nCarbs: 160–180 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        -2096
+      ],
+      "id": "bcbfed59-6f32-430f-9b1a-90c0f88f064a",
+      "name": "Send a text message8",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_20",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 111111111,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    },
+                    "id": "0e25ddca-efcf-46cc-b31e-971f27408229"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User2"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "464b0c38-2f41-490c-b5c3-dd5731e0c85f",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 222222222,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User1"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "84a8f64f-5c87-45f0-954d-349eb09baaef",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 1171144007,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User3"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "d06ca116-4cab-4f54-96ce-00a097625826",
+                    "leftValue": "={{ $('Audio Message').item.json.message.from.id }}",
+                    "rightValue": 1025157283,
+                    "operator": {
+                      "type": "number",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "User4"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.3,
+      "position": [
+        1376,
+        -1872
+      ],
+      "id": "001f38c7-d169-4e45-af85-14d7b83fc6b4",
+      "name": "Switch3"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target for getting leaner):\n--------------------------------------\nCalories: 2,400 kcal\nProtein: 160 g\nFat: ? g\nCarbs: ? g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        -1776
+      ],
+      "id": "0f407331-b974-490e-8f66-53799a14309e",
+      "name": "Send a text message9",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_21",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.chat.id }}",
+        "text": "=*Available commands*\n--------------------\n\n/meal - Make a meal log entry (you can also send an audio message without using command to make a log entry)\n\n/daily - See your total for the day\n\n/yesterday - See your total for the day before\n\n*Reminder!*\n----------\n\nYou can make a meal log entry up to 3:00am and it will stil count as today.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1040,
+        -2320
+      ],
+      "id": "b534fb3b-2426-4038-9601-09f421083447",
+      "name": "Send a text message10",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_22",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "PLACEHOLDER_DATATABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Nutritional Value Database",
+          "cachedResultUrl": "/projects/PLACEHOLDER_PROJECT_ID/datatables/PLACEHOLDER_DATATABLE_ID"
+        }
+      },
+      "type": "n8n-nodes-base.dataTableTool",
+      "typeVersion": 1,
+      "position": [
+        1168,
+        208
+      ],
+      "id": "8d95df6d-175e-42ad-adb1-8f7dd28ddb52",
+      "name": "Nutritional Value Database"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "PLACEHOLDER_DATATABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Nutritional Value Database",
+          "cachedResultUrl": "/projects/PLACEHOLDER_PROJECT_ID/datatables/PLACEHOLDER_DATATABLE_ID"
+        }
+      },
+      "type": "n8n-nodes-base.dataTableTool",
+      "typeVersion": 1,
+      "position": [
+        2672,
+        320
+      ],
+      "id": "844fcdcf-441f-4d7a-aa95-6f1f614fe3cc",
+      "name": "Nutritional Value Database1"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target:\n--------------------------------------\nCalories: 1,400 kcal\nProtein: 70-90 g\nFat: 45-60 g\nCarbs: 140-190 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        -1616
+      ],
+      "id": "e83e2354-01a1-42ad-8a97-283449d0fb8e",
+      "name": "Send a text message11",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_23",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target:\n--------------------------------------\nCalories: 1,400 kcal\nProtein: 70-90 g\nFat: 45-60 g\nCarbs: 140-190 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1632,
+        -944
+      ],
+      "id": "302cf9b8-a379-4903-b0ad-fdb5e0ffa434",
+      "name": "Send a text message12",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_24",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Audio Message').item.json.message.from.id }}",
+        "text": "=Your daily stats:\n-----------------\nProtein: {{ $json.sum_Total_Protein }}g\nFat: {{ $json.sum_Total_Fat }}g\nCarbs: {{ $json.sum_Total_Carbs }}g\nKcal: {{ $json.sum_Total_Kcal }}\n\nYour daily target:\n--------------------------------------\nCalories: 1,400 kcal\nProtein: 70-90 g\nFat: 45-60 g\nCarbs: 140-190 g",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        3664,
+        448
+      ],
+      "id": "c355585d-5fa1-4675-a093-343bc74deff4",
+      "name": "Send a text message13",
+      "webhookId": "PLACEHOLDER_WEBHOOK_ID_25",
+      "credentials": {
+        "telegramApi": {
+          "id": "PLACEHOLDER_TELEGRAM_CREDENTIAL_ID",
+          "name": "Placeholder Telegram Credential"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Edit Fields1": [
+      {
+        "json": {
+          "text": "Previous output: \"{\"output\":{\"ingredients\":[{\"name\":\"fried eggs\",\"amount\":3,\"unit\":\"g\",\"fat_g\":21,\"protein_g\":18,\"carbs_g\":1.1,\"kcal\":240},{\"name\":\"cottage cheese\",\"amount\":100,\"unit\":\"g\",\"fat_g\":5,\"protein_g\":16,\"carbs_g\":1.8,\"kcal\":98}],\"total\":{\"fat_g\":26,\"protein_g\":34,\"carbs_g\":2.9,\"kcal\":338},\"log_time\":\"2025-10-22T19:40:02Z\"}}\"\nComment:\"I ate 3 pan fried eggs, not 3 g of eggs\"\nMessage: \"съел 3 жареных яйца и 100 граммов творога 5-процентной жирности, у которого пищевая ценность на 100 граммов 16 граммов белка, 5 граммов жира и 1,8 граммов извоза.\" Date: 10/22/2025, 7:40:02 PM"
+        }
+      }
+    ],
+    "Audio Message": [
+      {
+        "json": {
+          "update_id": 669965495,
+          "message": {
+            "message_id": 762,
+            "from": {
+              "id": 222222222,
+              "is_bot": false,
+              "first_name": "User1",
+              "last_name": "User1Last",
+              "username": "user1",
+              "language_code": "en"
+            },
+            "chat": {
+              "id": 222222222,
+              "first_name": "User1",
+              "last_name": "User1Last",
+              "username": "user1",
+              "type": "private"
+            },
+            "date": 1773845063,
+            "voice": {
+              "duration": 25,
+              "mime_type": "audio/ogg",
+              "file_id": "PLACEHOLDER_FILE_ID",
+              "file_unique_id": "PLACEHOLDER_FILE_UNIQUE_ID",
+              "file_size": 96987
+            }
+          }
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Audio Message": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Progress Update 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Transcribe a recording",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe a recording": {
+      "main": [
+        [
+          {
+            "node": "Progress Update ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "If /meal or not",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message and wait for response": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Date & Time",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send message and wait for response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Latest AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Date & Time": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize": {
+      "main": [
+        [
+          {
+            "node": "Switch2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Progress Update": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress Update 2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Progress Update ": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete a chat message": {
+      "main": [
+        [
+          {
+            "node": "Latest AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Latest AI Output": {
+      "main": [
+        [
+          {
+            "node": "Send message and wait for response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet1": {
+      "main": [
+        [
+          {
+            "node": "Summarize1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Date & Time1": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize1": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Progress Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send message and wait for response2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Date & Time2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Date & Time1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send message and wait for response3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a text message4": {
+      "main": [
+        []
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Send a text message4",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message12",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch2": {
+      "main": [
+        [
+          {
+            "node": "Send a text message6",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message5",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message7",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message13",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message and wait for response3": {
+      "main": [
+        [
+          {
+            "node": "Send Progress Update1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message and wait for response1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Progress Update1": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields2": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If /meal or not": {
+      "main": [
+        [
+          {
+            "node": "Delete a chat message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Delete a chat message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete a chat message1": {
+      "main": [
+        [
+          {
+            "node": "Latest AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet2": {
+      "main": [
+        [
+          {
+            "node": "Summarize2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Date & Time2": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize2": {
+      "main": [
+        [
+          {
+            "node": "Switch3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch3": {
+      "main": [
+        [
+          {
+            "node": "Send a text message8",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message3",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message9",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a text message11",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send message and wait for response2": {
+      "main": [
+        [
+          {
+            "node": "Send a text message10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nutritional Value Database": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Nutritional Value Database1": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Almaty",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "errorWorkflow": "EYaG0KGW0BeO0Miq"
+  },
+  "versionId": "cbec66cc-e036-4cb6-b004-1c5fb37b925d",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ddbfb78e919dbe7d0d5b21a16c3dae4ebf9718120f66676aa59de8779eb12cb9"
+  },
+  "id": "EYaG0KGW0BeO0Miq",
+  "tags": []
+}
