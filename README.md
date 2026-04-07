@@ -1,3 +1,6 @@
+![n8n](https://img.shields.io/badge/Built_with-n8n-orange)
+![OpenAI](https://img.shields.io/badge/AI-OpenAI-blue)
+![Status](https://img.shields.io/badge/status-active-success)
 # AI Calorie Tracker (n8n + Telegram + OpenAI)
 
 🚀 **Track your calories automatically using voice messages.**  
