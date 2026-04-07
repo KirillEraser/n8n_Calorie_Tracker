@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>n8n Workflow</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@webcomponents/webcomponentsjs@2/webcomponents-loader.js"></script>
+  <script src="https://unpkg.com/lit/polyfill-support.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@n8n_io/n8n-demo-component/n8n-demo.bundled.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      background: #1f2937; /* n8n dark vibe */
+    }
+    n8n-demo {
+      height: 100vh;
+      display: block;
+    }
+  </style>
+</head>
+
+<body>
+
+<n8n-demo id="demo"></n8n-demo>
+
+<script>
+fetch('./workflow.json')
+  .then(res => res.json())
+  .then(data => {
+    document.getElementById('demo').workflow = JSON.stringify(data);
+  });
+</script>
+
+</body>
+</html>
