@@ -1,4 +1,4 @@
-# 🧠 AI Calorie Tracker (n8n + Telegram + OpenAI)
+# AI Calorie Tracker (n8n + Telegram + OpenAI)
 
 A fully automated calorie tracking system built with **n8n**, powered by **AI**, and integrated into **Telegram**.
 
@@ -30,9 +30,7 @@ Log your meals using **voice or text**, and the system will:
 
 ---
 
-## ⚙️ Workflow Overview
-
-Full workflow JSON: fileciteturn0file0
+## ⚙️ Workflow Overview
 
 ### 1. Input Handling
 
